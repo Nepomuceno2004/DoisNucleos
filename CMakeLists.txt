@@ -21,7 +21,10 @@ include(pico_sdk_import.cmake)
 project(DoisNucleos C CXX ASM)
 pico_sdk_init()
 
-add_executable(DoisNucleos DoisNucleos.c )
+add_executable(DoisNucleos 
+        DoisNucleos.c 
+        lib/ssd1306/ssd1306.c
+)
 
 pico_set_program_name(DoisNucleos "DoisNucleos")
 pico_set_program_version(DoisNucleos "0.1")
@@ -32,12 +35,14 @@ pico_enable_stdio_usb(DoisNucleos 1)
 target_link_libraries(${PROJECT_NAME} 
         pico_stdlib 
         pico_multicore
+        hardware_pio
+        hardware_i2c
+        hardware_adc
         )
 
-target_include_directories(DoisNucleos PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}
+target_include_directories(DoisNucleos PUBLIC
+    ${CMAKE_CURRENT_LIST_DIR}/lib/ssd1306
 )
-
 
 pico_add_extra_outputs(DoisNucleos)
 
