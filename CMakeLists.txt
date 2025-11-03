@@ -24,6 +24,8 @@ pico_sdk_init()
 add_executable(DoisNucleos 
         DoisNucleos.c 
         lib/ssd1306/ssd1306.c
+        lib/aht20/aht20.c
+        lib/bmp280/bmp280.c
 )
 
 pico_set_program_name(DoisNucleos "DoisNucleos")
@@ -41,7 +43,9 @@ target_link_libraries(${PROJECT_NAME}
         )
 
 target_include_directories(DoisNucleos PUBLIC
+    ${CMAKE_CURRENT_LIST_DIR}/lib/aht20
     ${CMAKE_CURRENT_LIST_DIR}/lib/ssd1306
+    ${CMAKE_CURRENT_LIST_DIR}/lib/bmp280
 )
 
 pico_add_extra_outputs(DoisNucleos)
