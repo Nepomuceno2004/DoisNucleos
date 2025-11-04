@@ -36,19 +36,25 @@ void core1_interrupt_handler()
 {
     while (multicore_fifo_rvalid())
     {
-        uint32_t val = multicore_fifo_pop_blocking();
-        float voltage = val * 3.3 / 4095.0;
+        // Recebe o ponteiro enviado pelo Core 0
+        uint32_t addr = multicore_fifo_pop_blocking();
+        Data_sensors *ptr = (Data_sensors *)addr;
 
-        printf("Core 1 (IRQ): Valor RECEBIDO do Core 0: %lu, Voltagem: %.2f V\n", val, voltage);
+        printf("Core 1 (IRQ): Dados recebidos via ponteiro:\n");
+        printf("  Temperatura: %.2f °C\n", ptr->temperature);
+        printf("  Umidade: %.2f %%\n", ptr->humidity);
+        printf("  Pressão: %.2f kPa\n", ptr->pressure);
 
         // --- Atualiza display ---
-        char str_adc[20], str_volt[20];
-        sprintf(str_adc, "ADC: %lu", val);
-        sprintf(str_volt, "V: %.2f V", voltage);
+        char str_temp[32], str_hum[32], str_press[32];
+        sprintf(str_temp, "T: %.1fC", ptr->temperature);
+        sprintf(str_hum, "H: %.1f%%", ptr->humidity);
+        sprintf(str_press, "P: %.1fkPa", ptr->pressure);
 
         ssd1306_fill(&ssd, false);
-        ssd1306_draw_string(&ssd, str_adc, 25, 10);
-        ssd1306_draw_string(&ssd, str_volt, 25, 30);
+        ssd1306_draw_string(&ssd, str_temp, 25, 10);
+        ssd1306_draw_string(&ssd, str_hum, 25, 30);
+        ssd1306_draw_string(&ssd, str_press, 25, 50);
         ssd1306_send_data(&ssd);
     }
 
@@ -98,6 +104,7 @@ int main()
     struct bmp280_calib_param params;
     bmp280_get_calib_params(I2C_PORT_SENSORES, &params);
     printf("BMP280 inicializado\n");
+
     // --- ADC ---
     adc_init();
     adc_gpio_init(26);
@@ -109,11 +116,10 @@ int main()
 
     Data_sensors data_sensors;
     int32_t raw_temp_bmp, raw_pressure_pa_int;
-    float g_temp_bmp, g_temp_aht, g_temp_media, g_pressao_kpa;
+    float g_temp_bmp;
 
     while (true)
     {
-
         // --- Leitura dos Sensores ---
         bmp280_read_raw(I2C_PORT_SENSORES, &raw_temp_bmp, &raw_pressure_pa_int);
         g_temp_bmp = bmp280_convert_temp(raw_temp_bmp, &params) / 100.0;
@@ -122,21 +128,19 @@ int main()
         AHT20_Data data_aht;
         if (aht20_read(I2C_PORT_SENSORES, &data_aht))
         {
-            g_temp_aht = data_aht.temperature;
             data_sensors.humidity = data_aht.humidity;
+            data_sensors.temperature = (g_temp_bmp + data_aht.temperature) / 2.0f;
         }
-        data_sensors.temperature = (g_temp_bmp + g_temp_aht) / 2.0f;
 
-        // DEBUG: Imprime os valores lidos no monitor serial
-        printf("BMP280 -> Temp: %.2f C, Pressao: %.2f kPa\n", g_temp_bmp, data_sensors.pressure);
-        printf("AHT20  -> Temp: %.2f C, Umidade: %.2f %%\n", g_temp_aht, data_sensors.humidity);
-        printf("Media  -> Temp: %.2f C\n\n", data_sensors.temperature);
+        // --- Envia o endereço da struct para o Core 1 ---
+        multicore_fifo_push_blocking((uint32_t)&data_sensors);
 
-        // --- Leitura do ADC e envio para o Core 1 ---
-        uint16_t adc_value = adc_read();
-        printf("Core 0: Valor lido no ADC: %u\n", adc_value);
-        multicore_fifo_push_blocking(adc_value);
+        // --- DEBUG SERIAL ---
+        printf("Core 0 -> Temp: %.2f C, Umid: %.2f %%, Press: %.2f kPa\n",
+               data_sensors.temperature,
+               data_sensors.humidity,
+               data_sensors.pressure);
 
-        sleep_ms(1000); // Aguarda 250 ms
+        sleep_ms(1000); // Aguarda 1000 ms
     }
 }
