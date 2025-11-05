@@ -3,13 +3,13 @@
 #include "pico/multicore.h"
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
-#include "hardware/adc.h"
 #include "ssd1306.h"
 #include "font.h"
 #include "bmp280.h"
 #include "aht20.h"
 
 ssd1306_t ssd; // Estrutura do display
+volatile bool read_sensors_flag = false;
 
 typedef struct
 {
@@ -22,6 +22,8 @@ typedef struct
 #define I2C_PORT_SENSORES i2c0
 #define I2C_SDA_SENSORES 0
 #define I2C_SCL_SENSORES 1
+#define LED_VERDE 11
+#define LED_VERMELHO 13
 
 // Trecho para modo BOOTSEL com botão B
 #include "pico/bootrom.h"
@@ -64,12 +66,22 @@ void core1_interrupt_handler()
 // ==== FUNÇÃO PRINCIPAL DO CORE 1 ====
 void core1_entry()
 {
-    // Inicializa o display (somente uma vez)
+    // --- Inicialização dos LEDs ---
+    gpio_init(LED_VERDE);
+    gpio_set_dir(LED_VERDE, GPIO_OUT);
+    gpio_init(LED_VERMELHO);
+    gpio_set_dir(LED_VERMELHO, GPIO_OUT);
+    printf("LEDs inicializados\n");
+
+    gpio_put(LED_VERDE, 0);
+    gpio_put(LED_VERMELHO, 0);
+
+    // --- Inicialização do Display ---
     init_Display(&ssd);
     ssd1306_fill(&ssd, false);
     ssd1306_draw_string(&ssd, "DISPLAY OK!", 10, 20);
     ssd1306_send_data(&ssd);
-    sleep_ms(1500);
+    sleep_ms(1000);
 
     multicore_fifo_clear_irq();
     irq_set_exclusive_handler(SIO_IRQ_PROC1, core1_interrupt_handler);
@@ -77,7 +89,21 @@ void core1_entry()
 
     while (true)
     {
-        tight_loop_contents();
+
+        if (read_sensors_flag)
+        {
+            gpio_put(LED_VERDE, 1);
+            sleep_ms(500);
+            gpio_put(LED_VERDE, 0);
+            sleep_ms(500);
+        }
+        else
+        {
+            gpio_put(LED_VERMELHO, 1);
+            sleep_ms(500);
+            gpio_put(LED_VERMELHO, 0);
+            sleep_ms(500);
+        }
     }
 }
 
@@ -105,12 +131,6 @@ int main()
     bmp280_get_calib_params(I2C_PORT_SENSORES, &params);
     printf("BMP280 inicializado\n");
 
-    // --- ADC ---
-    adc_init();
-    adc_gpio_init(26);
-    adc_select_input(0);
-    printf("ADC inicializado\n");
-
     multicore_launch_core1(core1_entry);
     printf("CORE 1 INICIADO\n");
 
@@ -125,11 +145,19 @@ int main()
         g_temp_bmp = bmp280_convert_temp(raw_temp_bmp, &params) / 100.0;
         data_sensors.pressure = bmp280_convert_pressure(raw_pressure_pa_int, raw_temp_bmp, &params) / 1000.0;
 
+        if (data_sensors.pressure <= 0)
+            read_sensors_flag = false;
+
         AHT20_Data data_aht;
         if (aht20_read(I2C_PORT_SENSORES, &data_aht))
         {
             data_sensors.humidity = data_aht.humidity;
             data_sensors.temperature = (g_temp_bmp + data_aht.temperature) / 2.0f;
+            read_sensors_flag = true;
+        }
+        else
+        {
+            read_sensors_flag = false;
         }
 
         // --- Envia o endereço da struct para o Core 1 ---
