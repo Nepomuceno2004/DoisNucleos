@@ -8,6 +8,12 @@
 #include "bmp280.h"
 #include "aht20.h"
 
+// Usar a UART do DEBUG (uart0 nos GPIOs 16 e 17)
+#include "hardware/uart.h"
+#define UART_TX_PIN 16
+#define UART_RX_PIN 17
+#define BAUD_RATE 115200
+
 ssd1306_t ssd; // Estrutura do display
 volatile bool read_sensors_flag = false;
 
@@ -28,10 +34,7 @@ typedef struct
 // Trecho para modo BOOTSEL com botão B
 #include "pico/bootrom.h"
 #define botaoB 6
-void gpio_irq_handler(uint gpio, uint32_t events)
-{
-    reset_usb_boot(0, 0);
-}
+
 
 // ==== HANDLER DE INTERRUPÇÃO DO CORE 1 ====
 void core1_interrupt_handler()
@@ -109,15 +112,12 @@ void core1_entry()
 
 int main()
 {
-    // Para ser utilizado o modo BOOTSEL com botão B
-    stdio_init_all();
+    // Preciso iniciar a UART diferente do padrão do stdio_init_all()
+    // para o Debug com oRaspberry Pi Pico já soldado na minha BitDogLab;
+    stdio_uart_init_full(uart0, BAUD_RATE, UART_TX_PIN, UART_RX_PIN);
+    //Não precisa mais se preucupar com bootsel MUAHAHAHA
 
-    gpio_init(botaoB);
-    gpio_set_dir(botaoB, GPIO_IN);
-    gpio_pull_up(botaoB);
-    gpio_set_irq_enabled_with_callback(botaoB, GPIO_IRQ_EDGE_FALL, true, &gpio_irq_handler);
-    printf("Pressione o botao B para entrar em BOOTSEL\n");
-    // Fim do trecho para modo BOOTSEL com botão B
+  
 
     // --- Inicialização dos Sensores (BMP280 e AHT20) ---
     i2c_init(I2C_PORT_SENSORES, 400 * 1000);
